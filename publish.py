@@ -1,6 +1,6 @@
 """Publish one planned post to Instagram @trop_lead.
 
-Usage: python3 publish.py 2026-w44 p1
+Usage: python3 publish.py 2026-w44 p1  (posts with "reel" go out as Reels with music)
 Images are served from this repo via raw.githubusercontent.com; the Graph API
 token is injected by the session proxy.
 """
@@ -23,7 +23,7 @@ def call(method, path, **params):
 
 
 def wait_ready(container_id):
-    for _ in range(30):
+    for _ in range(60):
         status = call("GET", container_id, fields="status_code")["status_code"]
         if status == "FINISHED":
             return
@@ -36,7 +36,10 @@ def wait_ready(container_id):
 def main(week, key):
     post = json.load(open(f"{week}/posts.json"))[key]
     urls = [f"{RAW}/{week}/{img}" for img in post["images"]]
-    if len(urls) == 1:
+    if post.get("reel"):
+        container = call("POST", f"{IG_USER}/media", media_type="REELS", video_url=f"{RAW}/{week}/{post['reel']}",
+                         cover_url=urls[0], caption=post["caption"], share_to_feed="true")["id"]
+    elif len(urls) == 1:
         container = call("POST", f"{IG_USER}/media", image_url=urls[0], caption=post["caption"])["id"]
     else:
         children = [call("POST", f"{IG_USER}/media", image_url=u, is_carousel_item="true")["id"] for u in urls]
