@@ -1,6 +1,6 @@
 """Original, royalty-free background bed for TropLead Reels (synthesised, no samples).
 
-Usage: python3 tools/music.py OUT.wav SECONDS
+Usage: python3 tools/music.py OUT.wav SECONDS [VARIANT]
 Warm lo-fi/corporate groove: 96 BPM, Fmaj7–G6–Em7–Am7, soft pad, pluck arpeggio,
 sub bass, gentle kick + hats, pumped by the kick.
 """
@@ -10,16 +10,27 @@ import wave
 import numpy as np
 
 SR = 44100
-BPM = 96
+# Each preset is a different original bed: (bpm, chords, bass, arp pattern, pad cutoff Hz, kick level, transpose)
+PRESETS = [
+    (96, [[53, 57, 60, 64], [55, 59, 62, 64], [52, 55, 59, 62], [57, 60, 64, 67]], [41, 43, 40, 45], [0, 2, 1, 3, 2, 1, 3, 2], 900, 0.45, 0),
+    (104, [[57, 60, 64, 67], [53, 57, 60, 64], [48, 52, 55, 59], [55, 59, 62, 65]], [45, 41, 36, 43], [0, 1, 2, 3, 2, 1, 0, 2], 1200, 0.5, 0),
+    (88, [[50, 53, 57, 60], [55, 58, 62, 65], [48, 52, 55, 58], [53, 57, 60, 64]], [38, 43, 36, 41], [3, 2, 1, 0, 1, 2, 3, 1], 750, 0.4, 2),
+    (112, [[52, 55, 59, 62], [48, 52, 55, 59], [55, 59, 62, 66], [50, 54, 57, 60]], [40, 36, 43, 38], [0, 2, 3, 2, 1, 2, 3, 0], 1400, 0.55, -1),
+    (92, [[48, 52, 55, 59], [45, 48, 52, 55], [53, 57, 60, 64], [55, 59, 62, 65]], [36, 45, 41, 43], [0, 3, 1, 2, 0, 3, 2, 1], 1000, 0.42, 3),
+    (100, [[55, 58, 62, 65], [51, 55, 58, 62], [53, 57, 60, 63], [50, 53, 57, 60]], [43, 39, 41, 38], [1, 3, 2, 0, 1, 3, 0, 2], 850, 0.48, -2),
+]
+BPM, CHORDS, BASS, PATTERN, PAD_CUTOFF, KICK, _ = PRESETS[0]
 BEAT = 60 / BPM
 BAR = 4 * BEAT
-CHORDS = [  # MIDI notes
-    [53, 57, 60, 64],  # Fmaj7
-    [55, 59, 62, 64],  # G6
-    [52, 55, 59, 62],  # Em7
-    [57, 60, 64, 67],  # Am7
-]
-BASS = [41, 43, 40, 45]
+
+
+def use_preset(n):
+    global BPM, CHORDS, BASS, PATTERN, PAD_CUTOFF, KICK, BEAT, BAR
+    BPM, chords, bass, PATTERN, PAD_CUTOFF, KICK, tr = PRESETS[n % len(PRESETS)]
+    CHORDS = [[m + tr for m in c] for c in chords]
+    BASS = [m + tr for m in bass]
+    BEAT = 60 / BPM
+    BAR = 4 * BEAT
 
 
 def hz(m):
@@ -63,7 +74,7 @@ def render(seconds):
         seg = len(t_bar)
         # pad: detuned saws, filtered, slow attack
         pad = sum(saw(hz(m) * d, t_bar) for m in chord for d in (0.997, 1.003))
-        pad = lowpass(pad / 8, 900) * env(seg, 0.25, 0.25) * 0.75
+        pad = lowpass(pad / 8, PAD_CUTOFF) * env(seg, 0.25, 0.25) * 0.75
         # sub bass on 1 and the "and" of 3
         bl = np.zeros(seg)
         for pos in (0, 2.5):
@@ -74,7 +85,7 @@ def render(seconds):
             bl[s:s + ln] += note[: seg - s]
         # pluck arpeggio, 8th notes
         arp = np.zeros((seg, 2))
-        pattern = [0, 2, 1, 3, 2, 1, 3, 2]
+        pattern = PATTERN
         for k, idx in enumerate(pattern):
             s = int(k * BEAT / 2 * SR)
             ln = int(0.45 * SR)
@@ -94,7 +105,7 @@ def render(seconds):
                 ln = int(0.35 * SR)
                 tt = np.arange(ln) / SR
                 kick = np.sin(2 * np.pi * (45 + 90 * np.exp(-tt * 30)) * tt) * np.exp(-tt * 9)
-                dr[s:s + ln] += kick * 0.45
+                dr[s:s + ln] += kick * KICK
                 pl = int(0.3 * SR)
                 pump[s:s + pl] = np.minimum(pump[s:s + pl], 0.65 + 0.35 * np.linspace(0, 1, pl))
             for half in (0, 1):  # hats on 8ths
@@ -120,7 +131,8 @@ def render(seconds):
     return out
 
 
-def main(path, seconds):
+def main(path, seconds, variant=0):
+    use_preset(int(variant))
     audio = (render(float(seconds)) * 32767).astype(np.int16)
     with wave.open(path, "wb") as w:
         w.setnchannels(2)
@@ -130,4 +142,4 @@ def main(path, seconds):
 
 
 if __name__ == "__main__":
-    main(*sys.argv[1:3])
+    main(*sys.argv[1:4])

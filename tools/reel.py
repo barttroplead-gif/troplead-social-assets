@@ -1,8 +1,9 @@
 """Turn post graphics into a 1080x1920 Reel with the TropLead music bed.
 
-Usage: python3 tools/reel.py OUT.mp4 IMG [IMG ...]
+Usage: python3 tools/reel.py OUT.mp4 [--music N] IMG [IMG ...]
 One image: slow push-in. Several: slideshow with crossfades, longer hold on
-first and last slide. Each 4:5 slide is centred on its own background colour.
+first and last slide. 9:16 images (1080x1920) fill the frame; 4:5 ones are
+centred on their background colour. --music picks one of the beds in music.py.
 """
 import os
 import subprocess
@@ -27,12 +28,12 @@ def bg(path):
     return f"0x{r:02X}{g:02X}{b:02X}"
 
 
-def main(out, *images):
+def main(out, *images, music=0):
     durs = durations(len(images))
     total = sum(durs) - FADE * (len(images) - 1)
     with tempfile.TemporaryDirectory() as tmp:
         wav = os.path.join(tmp, "bed.wav")
-        subprocess.run([sys.executable, os.path.join(HERE, "music.py"), wav, f"{total + 0.5:.2f}"], check=True)
+        subprocess.run([sys.executable, os.path.join(HERE, "music.py"), wav, f"{total + 0.5:.2f}", str(music)], check=True)
 
         args = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y"]
         for img, d in zip(images, durs):
@@ -43,9 +44,16 @@ def main(out, *images):
         for i, (img, d) in enumerate(zip(images, durs)):
             frames = int(d * FPS)
             zoom = "min(1+0.0006*on,1.04)" if len(images) == 1 else "min(1+0.0005*on,1.03)"
+            w, h = Image.open(img).size
+            if h / w > 1.7:  # native 9:16, no padding
+                size, pad = "1080x1920", ""
+                scale = "scale=2160:3840"
+            else:
+                size, pad = "1080x1350", f",pad=1080:1920:0:190:color={bg(img)}"
+                scale = "scale=2160:2700"
             parts.append(
-                f"[{i}:v]scale=2160:2700,zoompan=z='{zoom}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
-                f":d={frames}:s=1080x1350:fps={FPS},pad=1080:1920:0:190:color={bg(img)},setsar=1,format=yuv420p[v{i}]"
+                f"[{i}:v]{scale},zoompan=z='{zoom}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+                f":d={frames}:s={size}:fps={FPS}{pad},setsar=1,format=yuv420p[v{i}]"
             )
         last, offset = "v0", 0.0
         for i in range(1, len(images)):
@@ -62,4 +70,8 @@ def main(out, *images):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1], *sys.argv[2:])
+    argv = sys.argv[2:]
+    music = 0
+    if argv[:1] == ["--music"]:
+        music, argv = int(argv[1]), argv[2:]
+    main(sys.argv[1], *argv, music=music)
